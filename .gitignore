@@ -1,0 +1,7 @@
+slurm_logs/*
+slurm_scripts/*
+*pycache*
+*bkp*
+results/*
+test_results/*
+checkpoints/*

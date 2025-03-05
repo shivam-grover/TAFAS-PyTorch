@@ -1,68 +1,27 @@
-# DLinear
+# TAFAS Unofficial Implementation
 
-This is a Pytorch implementation of DLinear: "[Are Transformers Effective for Time Series Forecasting?](https://arxiv.org/pdf/2205.13504.pdf)". 
-
-
-## Features
-- [x] Support both [Univariate](https://github.com/cure-lab/DLinear/tree/main/scripts/EXP-LongForecasting/DLinear/univariate) and [Multivariate](https://github.com/cure-lab/DLinear/tree/main/scripts/EXP-LongForecasting/DLinear) long-term time series forecasting.
-- [x] Support visualization of weights.
-- [x] Support scripts on different [look-back window size](https://github.com/cure-lab/DLinear/tree/main/scripts/EXP-LookBackWindow).
+This is a Pytorch implementation of TAFAS: "[Battling the Non-stationarity in Time Series Forecasting via Test-time Adaptation](https://arxiv.org/pdf/2501.04970)". 
 
 
+## TODO
+- [x] GCM
+- [x] PAAS
+- [x] Full loss when previous ground truth is available
+- [x] Prediction Adjustment
+- [x] Grid search for alpha and adaptation learning rate
+- [x] Implement with DLinear
+- [ ] Implement with other baselines
+- [ ] Reproduce all experiments
 
-Beside DLinear, we provide five significant forecasting Transformers to re-implement the results in the paper.
-- [x] [Transformer](https://arxiv.org/abs/1706.03762) (NeuIPS 2017)
-- [x] [Informer](https://arxiv.org/abs/2012.07436) (AAAI 2021 Best paper)
-- [x] [Autoformer](https://arxiv.org/abs/2106.13008) (NeuIPS 2021)
-- [x] [Pyraformer](https://openreview.net/pdf?id=0EXmFzUn5I) (ICLR 2022 Oral)
-- [x] [FEDformer](https://arxiv.org/abs/2201.12740) (ICML 2022)
+## Steps
 
-
-## Detailed Description
-We provide all experiment script files in `./scripts`:
-| Files      |                              Interpretation                          |
-| ------------- | -------------------------------------------------------| 
-| EXP-LongForecasting      | Long-term Time Series Forecasting Task                    |
-| EXP-LookBackWindow      | Study the impact of different look-back window size   | 
-| EXP-Embedding        | Study the impact of different embedding strategies      |
-
-
-This code is simply build on the code base of Autoformer. We appreciate the following github repos a lot for their valuable code base or datasets:
-
-The implementation of Autoformer, Informer, Transformer is from https://github.com/thuml/Autoformer
-
-The implementation of FEDformer is from https://github.com/MAZiqing/FEDformer
-
-The implementation of Pyraformer is from https://github.com/alipay/Pyraformer
-
-## DLinear
-### Structure of DLinear
-![image](pics/DLinear.png)
-Although DLinear is simple, it has some compelling characteristics:
-- An O(1) maximum signal traversing path length: The shorter the path, the better the dependencies are captured, making DLinear capable of capturing both short-range and long-range temporal relations.
-- High-efficiency: As each branch has only one linear layer, it costs much lower memory and fewer parameters and has a faster inference speed than existing Transformers.
-- Interpretability: After training, we can visualize weights from the seasonality and trend branches to have some insights on the predicted values.
-- Easy-to-use: DLinear can be obtained easily without tuning model hyper-parameters.
-
-### Comparison with Transformers
-![image](pics/results.png)
-In Multivariate long sequence time-series forecasting(left table), DLinear outperforms FEDformer by over 40% on Exchange rate, around 30% on Traffic, Electricity, and Weather, and around 25% on ETTm1.
-
-In Univariate long sequqence time-series forecasting(right table), DLinear outperforms transformer-based methods in most cases.
-### Efficiency
-![image](pics/efficiency.png)
-Comparison of method efficiency on the Electricity dataset with a look-back window size of 96 and forecasting horizon of 720 steps. MACs are the number of multiply-accumulate operations. The inference time is an average result of 5 runs.
-## Getting Started
-### Environment Requirements
-
+### Setup your environment
 First, please make sure you have installed Conda. Then, our environment can be installed by:
 ```
 conda create -n DLinear python=3.6.9
 conda activate DLinear
 pip install -r requirements.txt
 ```
-
-
 
 ### Data Preparation
 
@@ -73,40 +32,50 @@ mkdir dataset
 ```
 **Please put them in the `./dataset` directory**
 
-### Training Example
-- In `scripts/ `, we provide the model implementation *Dlinear/Autoformer/Informer/Transformer*
-- In `FEDformer/scripts/`, we provide the *FEDformer* implementation
-- In `Pyraformer/scripts/`, we provide the *Pyraformer* implementation
+### Pretrain a model
+Navigate to the directory `scripts/EXP-LongForecasting/DLinear` and run a script of your choice to obtain a pretrained model.
+**NOTE**: The TAFAS paper uses a batch size of 64, and 30 epochs. So you would need to change that everywhere.
 
-For example:
+### Run TAFAS on the pretrained model
 
-To train the **DLinear** on **Exchange-Rate dataset**, you can use the scipt `scripts/EXP-LongForecasting/DLinear/exchange_rate.sh`:
+As an example, the following command runs TAFAS on a pretrained checkpoint for DLinear with ETTh1 and a prediction length of 720. Make sure to use the same values for parameters that you used while pretraining.
+**Note**: According to me, batch size during testing should be 1. I will contact the authors to ensure if I got this right, but empirically also, batch size 1 is the best as well.
+
 ```
-sh scripts/EXP-LongForecasting/DLinear/exchange_rate.sh
-```
-It will start to train DLinear, the results will be shown in `logs/LongForecasting`. 
+python3.8 -u run_TAFAS.py \
+  --root_path ./dataset/ \
+  --data_path ETTh1.csv \
+  --data ETTh1 \
+  --features M \
+  --seq_len 336 \
+  --pred_len 720 \
+  --enc_in 7 \
+  --des 'Exp' \
+  --itr 1 --batch_size 1\
+  --checkpoint "/home/23bx19/TTA/TAFAS/DLinear/checkpoints/ETTh1_336_720_DLinear_ETTh1_ftM_sl336_ll48_pl720_dm512_nh8_el2_dl1_df2048_fc1_ebtimeF_dtTrue_Exp_0/checkpoint.pth"\
+  --use_tafas
+  ```
 
-All scripts about using DLinear on long forecasting task is in `scripts/EXP-LongForecasting/DLinear/`, you can run them in a similar way. The default look-back window in scripts is 96, DLinear generally achieves better results with longer look-back window as dicussed in the paper. For instance, you can simpy change the **seq_len** (look-back window size) in scripts to 336 to obtain better performance.
 
-Scripts about look-back window size and long forecasting of FEDformer and Pyraformer is in `FEDformer/scripts` and `Pyraformer/scripts`, respectively. To run them, you need to first `cd FEDformer` or `cd Pyraformer`. Then, you can use sh to run them in a similar way. Logs will store in `logs/`.
+  ### Grid search if necessary
 
-Each experiment in `scripts/EXP-LongForecasting/DLinear/` takes 5min-20min. For other Transformer scripts, since we put all related experiments in one script file, directly running them will take 8 hours-1 day. You can keep the experiments you interested in and comment out the others. 
+  The paper mentions that they optimise the hyperparameters alpha and adaptation learning rate. For this you can run the following command.
 
-### DLinear Weights Visualization
-As shown in our paper, the weights of DLinear can reveal some charateristic of the data, i.e., the periodicity. We provide the weight visualization of DLinear in `weight_plot.py`. To run the visualization, you need to input the model path (model_name) of DLinear (the model directory in `./checkpoint` by default).
+  ```
+python3.8 -u run_TAFAS_grid_search.py \
+  --root_path ./dataset/ \
+  --data_path ETTh1.csv \
+  --data ETTh1 \
+  --features M \
+  --seq_len 336 \
+  --pred_len 720 \
+  --enc_in 7 \
+  --des 'Exp' \
+  --itr 1 --batch_size 1\
+  --checkpoint "/home/23bx19/TTA/TAFAS/DLinear/checkpoints/ETTh1_336_720_DLinear_ETTh1_ftM_sl336_ll48_pl720_dm512_nh8_el2_dl1_df2048_fc1_ebtimeF_dtTrue_Exp_0/checkpoint.pth"\
+  ```
 
-![image](pics/Visualization.png)
-## Citing
+  This saves a csv file in the "csv" directory where you can observe the grid search results in order to pick the optimal hyperparameters.
 
-If you find this repository useful for your work, please consider citing it as follows:
 
-```bibtex
-@article{Zeng2022AreTE,
-  title={Are Transformers Effective for Time Series Forecasting?},
-  author={Ailing Zeng and Muxi Chen and Lei Zhang and Qiang Xu},
-  journal={arXiv preprint arXiv:2205.13504},
-  year={2022}
-}
-```
-
-Please remember to cite all the datasets and compared methods if you use them in your experiments.
+This work is based on the paper "[Battling the Non-stationarity in Time Series Forecasting via Test-time Adaptation](https://arxiv.org/pdf/2501.04970)" and "[Are Transformers Effective for Time Series Forecasting?](https://arxiv.org/pdf/2205.13504.pdf)".
