@@ -162,6 +162,7 @@ def test_tafas(args, model, input_gcm, output_gcm, test_loader, device, adaptati
         if do_PAAS:
             sample = batch_x[0]  # Extract sample (L, C)
             period = PAAS(sample)  # Compute period p dynamically
+            period = min(args.pred_len, period)
             cycle_size = period + 1  # Define mini-batch size
             test_batch = []  # Reset mini-batch buffer
             do_PAAS = False
@@ -175,12 +176,14 @@ def test_tafas(args, model, input_gcm, output_gcm, test_loader, device, adaptati
         if bsz < cycle_size:
             continue  # Wait until the mini-batch is full
 
+        print("Period", period)
+
         # Enable PAAS for the next cycle
         do_PAAS = True
 
         # ----- Process Mini-Batch -----
-        X_batch = torch.stack([sample[0] for sample in test_batch])  # (p, L, C)
-        Y_batch = torch.stack([sample[1] for sample in test_batch])  # (p, H, C)
+        X_batch = torch.stack([sample[0] for sample in test_batch])  # (p+1, L, C)
+        Y_batch = torch.stack([sample[1] for sample in test_batch])  # (p+1, H, C)
 
         # Store mini-batch with start index for later L_full computation
         mini_batch_start = current_step - period + 1
@@ -219,7 +222,7 @@ def test_tafas(args, model, input_gcm, output_gcm, test_loader, device, adaptati
             forecast_cali_b = output_gcm(pred_before)  # (p, H, C)
 
         # Extract partial ground truth (POGT) from last sample
-        # POGT = Y_batch[0][:period]
+        # POGT = Y_batch[-1][:period]
         POGT = X_batch[-1][-period : ]
 
         # Adaptation step: Compute L_partial
@@ -227,6 +230,7 @@ def test_tafas(args, model, input_gcm, output_gcm, test_loader, device, adaptati
         inp_cali = input_gcm(current_sample)  # (1, L, C)
         forecast = model(inp_cali)  # (1, pred_len, C)
         forecast_cali = output_gcm(forecast)  # (1, pred_len, C)
+        # print(period, forecast_cali.shape, POGT.unsqueeze(0).shape, Y_batch.shape)
         loss_p = criterion(forecast_cali[0, :period], POGT.unsqueeze(0))  # L_partial
 
         # Compute average L_full if any full GT mini-batches exist
@@ -280,12 +284,12 @@ def reset_seed():
 # -------------------------------
 def main():
     parser = argparse.ArgumentParser(description="Test DLinear with and without TAFAS")
-    parser.add_argument('--checkpoint', type=str, required=True, help='Path to pre-trained DLinear checkpoint')
-    parser.add_argument('--data', type=str, default='ETTm1', help='Dataset type')
-    parser.add_argument('--root_path', type=str, default='./data/ETT/', help='Root path for data files')
-    parser.add_argument('--data_path', type=str, default='ETTh1.csv', help='Data file name')
-    parser.add_argument('--pred_len', type=int, default=720, help='Forecasting horizon')
-    parser.add_argument('--seq_len', type=int, default=96, help='Look-back window length')
+    # parser.add_argument('--checkpoint', type=str, required=True, help='Path to pre-trained DLinear checkpoint')
+    # parser.add_argument('--data', type=str, default='ETTm1', help='Dataset type')
+    parser.add_argument('--root_path', type=str, default='./dataset/', help='Root path for data files')
+    # parser.add_argument('--data_path', type=str, default='ETTh1.csv', help='Data file name')
+    # parser.add_argument('--pred_len', type=int, default=720, help='Forecasting horizon')
+    # parser.add_argument('--seq_len', type=int, default=96, help='Look-back window length')
     parser.add_argument('--batch_size', type=int, default=1, help='Test batch size (preferably 1 for adaptation)')
     parser.add_argument('--use_tafas', action='store_true', help='Apply TAFAS test-time adaptation')
     parser.add_argument('--device', type=str, default='cuda:0', help='Device (cuda or cpu)')
@@ -326,72 +330,123 @@ def main():
 
     args = parser.parse_args()            
 
-    csv_dir = "csv"
-    csv_file = f"{csv_dir}/{args.data}_{args.seq_len}_p{args.pred_len}_{args.features}.csv"
+    checkpoint_dirs = os.listdir("checkpoints")
+    print(checkpoint_dirs)
+    checkpoint_dirs.sort()
 
-    with open(csv_file, 'a', newline='') as csvfile:
-            spamwriter = csv.writer(csvfile, delimiter=',',
-                                    quotechar='|', quoting=csv.QUOTE_MINIMAL)
-            spamwriter.writerow(["lr", "alpha", "val_mse", "val_mae", "test_mse", "test_mae"])
-            
-    
-    device = torch.device(args.device if torch.cuda.is_available() else 'cpu')
-    
-    # Load test data using the provided data provider (assumed to be similar to training script)
-    from data_provider.data_factory import data_provider
+    for checkpoint in checkpoint_dirs:
+        if(checkpoint == ".gitignore"):
+            continue
+        print("Starting grid search for ", checkpoint)
+        properties = checkpoint.split("_")
+        # Electricity_336_96_DLinear_custom_ftM_sl336_ll48_pl96_dm512_nh8_el2_dl1_df2048_fc1_ebtimeF_dtTrue_Exp_0
 
-    search_space = {
-        "adaptation_lr": [0.005, 0.003, 0.001, 0.0005, 0.0001],
-        "alpha": [0.01, 0.05, 0.1, 0.3]
-    }
+        args.checkpoint = "checkpoints/" + checkpoint + "/checkpoint.pth"
+        args.data_path = properties[0].lower() + ".csv"
+        if("exchange" in args.data_path):
+            args.data_path = "exchange_rate.csv"
+        if("ett" in args.data_path):
+            args.data_path = args.data_path.replace("ett", "ETT")
+        print(args.data_path)
+        args.seq_len = int(properties[1])
+        args.pred_len = int(properties[2])
+        args.model = properties[3]
+        args.data = properties[4]
+        args.features = properties[5].replace("ft", "")
+        args.d_model = int(properties[9].replace("dm", ""))
+        args.n_heads = int(properties[10].replace("nh", ""))
+        args.e_layers = int(properties[11].replace("el", ""))
+        args.d_layers = int(properties[12].replace("dl", ""))
+        args.d_ff = int(properties[13].replace("df", ""))
 
-    # For grid search, run TAFAS on both validation and test loss. We optimise for validation loss, and test losses are just for reference.
-    from models import DLinear
-
-    for alr in search_space['adaptation_lr']:
-        for alpha in search_space['alpha']:
-
-            print("Testing with lr", alr, "alpha", alpha)
-
-            _, test_loader = data_provider(args, flag='test')
-            _, vali_loader = data_provider(args, flag='val')
-
-            # print(vali_loader)
-
-            # Load the pre-trained DLinear model
-            model = DLinear.Model(args).float().to(device)
-            model.load_state_dict(torch.load(args.checkpoint, map_location=device))
-            model.eval()
-    
-            # Initialize the two GCM modules:
-            # Input GCM uses the look-back length (seq_len) and output GCM uses the forecast horizon (pred_len)
-            num_channels = args.enc_in  # For DLinear, enc_in equals the number of channels (e.g., 7)
-            input_gcm = GCM(T=args.seq_len, C=num_channels, init_alpha=alpha).to(device)
-            output_gcm = GCM(T=args.pred_len, C=num_channels, init_alpha=alpha).to(device)
-            
-            reset_seed()
-            print("Validation with TAFAS adaptation...")
-            val_mae, val_mse = test_tafas(args, model, input_gcm, output_gcm, vali_loader, device, adaptation_lr=alr)    
-
-            # Reinitialise GCM for test set. This is only for reference.
-            num_channels = args.enc_in  # For DLinear, enc_in equals the number of channels (e.g., 7)
-            input_gcm = GCM(T=args.seq_len, C=num_channels, init_alpha=alpha).to(device)
-            output_gcm = GCM(T=args.pred_len, C=num_channels, init_alpha=alpha).to(device)
-
-            reset_seed()
-            print("Testing with TAFAS adaptation...")
-            test_mae, test_mse = test_tafas(args, model, input_gcm, output_gcm, test_loader, device, adaptation_lr=alr)
-
-            with open(csv_file, 'a', newline='') as csvfile:
+        # Important! Note, you do not need dec_in for DLinear, but you would need it for other baselines
+        
+        # Important! For some reason, DLinear's univariate script has args.features as M, but args.feature as S, and args.feature is not used anywhere. Confirm before you run the pretraining.
+        if(args.features == "S"):
+            args.enc_in = 1
+        elif(args.data_path == "electricity.csv"):
+            args.enc_in = 321
+        elif(args.data_path == "weather.csv"):
+            args.enc_in = 21
+        elif(args.data_path == "exchange_rate.csv"):
+            args.enc_in = 8
+        elif(args.data_path == "traffic.csv"):
+            args.enc_in = 862
+        elif("ETT" in args.data_path):
+            args.enc_in = 7
+        
+        print("args", args)
+        
+        csv_dir = "csv"
+        print(args.data_path)
+        csv_file = f"{csv_dir}/{args.data_path.replace('.csv', '')}_{args.seq_len}_p{args.pred_len}_{args.features}.csv"
+        print(csv_file)
+        with open(csv_file, 'a', newline='') as csvfile:
                 spamwriter = csv.writer(csvfile, delimiter=',',
                                         quotechar='|', quoting=csv.QUOTE_MINIMAL)
-                spamwriter.writerow([alr, alpha, val_mse, val_mae, test_mse, test_mae])
+                spamwriter.writerow(["lr", "alpha", "val_mse", "val_mae", "test_mse", "test_mae", "og_mse", "og_mae", "imp mse", "imp mae"])
+            
+        # Get OG MSE and MAE
+        # I will do this later because right now I am running og tests with batch size 1
+    
+        device = torch.device(args.device if torch.cuda.is_available() else 'cpu')
+    
+        # Load test data using the provided data provider (assumed to be similar to training script)
+        from data_provider.data_factory import data_provider
 
-    # # Save the predictions and ground truths to disk
-    # os.makedirs('./results', exist_ok=True)
-    # np.save('./results/predictions.npy', preds)
-    # np.save('./results/ground_truth.npy', trues)
-    # print("Testing completed. Results saved to './results'.")
+        search_space = {
+            "adaptation_lr": [0.005, 0.003, 0.001, 0.0005, 0.0001],
+            "alpha": [0.01, 0.05, 0.1, 0.3]
+        }
+
+        # For grid search, run TAFAS on both validation and test loss. We optimise for validation loss, and test losses are just for reference.
+        from models import DLinear
+        args.batch_size = 1
+
+        for alr in search_space['adaptation_lr']:
+            for alpha in search_space['alpha']:
+
+                print("Testing with lr", alr, "alpha", alpha)
+
+                _, test_loader = data_provider(args, flag='test')
+                _, vali_loader = data_provider(args, flag='val')
+
+                # print(vali_loader)
+
+                # Load the pre-trained DLinear model
+                model = DLinear.Model(args).float().to(device)
+                model.load_state_dict(torch.load(args.checkpoint, map_location=device))
+                model.eval()
+        
+                # Initialize the two GCM modules:
+                # Input GCM uses the look-back length (seq_len) and output GCM uses the forecast horizon (pred_len)
+                num_channels = args.enc_in  # For DLinear, enc_in equals the number of channels (e.g., 7)
+                input_gcm = GCM(T=args.seq_len, C=num_channels, init_alpha=alpha).to(device)
+                output_gcm = GCM(T=args.pred_len, C=num_channels, init_alpha=alpha).to(device)
+                
+                reset_seed()
+                print("Validation with TAFAS adaptation...")
+                val_mae, val_mse = test_tafas(args, model, input_gcm, output_gcm, vali_loader, device, adaptation_lr=alr)    
+
+                # Reinitialise GCM for test set. This is only for reference.
+                num_channels = args.enc_in  # For DLinear, enc_in equals the number of channels (e.g., 7)
+                input_gcm = GCM(T=args.seq_len, C=num_channels, init_alpha=alpha).to(device)
+                output_gcm = GCM(T=args.pred_len, C=num_channels, init_alpha=alpha).to(device)
+
+                reset_seed()
+                print("Testing with TAFAS adaptation...")
+                test_mae, test_mse = test_tafas(args, model, input_gcm, output_gcm, test_loader, device, adaptation_lr=alr)
+
+                with open(csv_file, 'a', newline='') as csvfile:
+                    spamwriter = csv.writer(csvfile, delimiter=',',
+                                            quotechar='|', quoting=csv.QUOTE_MINIMAL)
+                    spamwriter.writerow([alr, alpha, val_mse, val_mae, test_mse, test_mae])
+
+        # # Save the predictions and ground truths to disk
+        # os.makedirs('./results', exist_ok=True)
+        # np.save('./results/predictions.npy', preds)
+        # np.save('./results/ground_truth.npy', trues)
+        # print("Testing completed. Results saved to './results'.")
 
 if __name__ == '__main__':
     main()

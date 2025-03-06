@@ -4,6 +4,7 @@ import torch
 from exp.exp_main import Exp_Main
 import random
 import numpy as np
+import csv
 
 fix_seed = 2021
 random.seed(fix_seed)
@@ -93,7 +94,7 @@ print(args)
 
 Exp = Exp_Main
 
-if args.is_training:
+if False:
     for ii in range(args.itr):
         # setting record of experiments
         setting = '{}_{}_{}_ft{}_sl{}_ll{}_pl{}_dm{}_nh{}_el{}_dl{}_df{}_fc{}_eb{}_dt{}_{}_{}'.format(
@@ -128,6 +129,7 @@ if args.is_training:
         torch.cuda.empty_cache()
 else:
     ii = 0
+    args.batch_size = 1
     setting = '{}_{}_{}_ft{}_sl{}_ll{}_pl{}_dm{}_nh{}_el{}_dl{}_df{}_fc{}_eb{}_dt{}_{}_{}'.format(args.model_id,
                                                                                                   args.model,
                                                                                                   args.data,
@@ -147,5 +149,10 @@ else:
 
     exp = Exp(args)  # set experiments
     print('>>>>>>>testing : {}<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<'.format(setting))
-    exp.test(setting, test=1)
+    mse, mae, rse, corr = exp.test(setting, test=1)
+    with open("test_og.csv", "a", newline='') as csvfile:
+            spamwriter = csv.writer(csvfile, delimiter=',',
+                                    quotechar='|', quoting=csv.QUOTE_MINIMAL)
+            spamwriter.writerow([args.model, args.data_path.replace('.csv', '') ,args.features, args.pred_len,mse, mae, rse])
+
     torch.cuda.empty_cache()

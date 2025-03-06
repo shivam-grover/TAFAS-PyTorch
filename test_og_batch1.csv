@@ -1,0 +1,5 @@
+Model, data, features, pred_len, mse, mae, rse
+DLinear,weather,M,96,0.17477773,0.23612384,0.55092853
+DLinear,weather,M,192,0.21618427,0.27481535,0.6120405
+DLinear,weather,M,336,0.26149422,0.3124052,0.6716091
+DLinear,weather,M,720,0.32477054,0.36426654,0.7499294

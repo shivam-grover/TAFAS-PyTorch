@@ -204,7 +204,7 @@ class Exp_Main(Exp_Basic):
         
         if test:
             print('loading model')
-            self.model.load_state_dict(torch.load(os.path.join('./checkpoints/' + setting, 'checkpoint.pth')))
+            self.model.load_state_dict(torch.load(os.path.join('./checkpoints/' + setting, 'checkpoint.pth'), map_location=self.device))
 
         preds = []
         trues = []
@@ -271,6 +271,8 @@ class Exp_Main(Exp_Basic):
         trues = np.array(trues)
         inputx = np.array(inputx)
 
+        print(pred.shape)
+
         preds = preds.reshape(-1, preds.shape[-2], preds.shape[-1])
         trues = trues.reshape(-1, trues.shape[-2], trues.shape[-1])
         inputx = inputx.reshape(-1, inputx.shape[-2], inputx.shape[-1])
@@ -293,7 +295,7 @@ class Exp_Main(Exp_Basic):
         np.save(folder_path + 'pred.npy', preds)
         # np.save(folder_path + 'true.npy', trues)
         # np.save(folder_path + 'x.npy', inputx)
-        return
+        return mse, mae, rse, corr
 
     def predict(self, setting, load=False):
         pred_data, pred_loader = self._get_data(flag='pred')

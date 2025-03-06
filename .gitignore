@@ -5,3 +5,4 @@ slurm_scripts/*
 results/*
 test_results/*
 checkpoints/*
+logs/*

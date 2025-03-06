@@ -217,10 +217,14 @@ def test_tafas(args, model, input_gcm, output_gcm, test_loader, device, adaptati
             forecast_cali_b = output_gcm(pred_before)  # (p, H, C)
 
         # Extract partial ground truth (POGT) from last sample
-        POGT = Y_batch[-1][:period]
+        # POGT = Y_batch[0][:period]
+
+        POGT = X_batch[-1][-period : ]
+
 
         # Adaptation step: Compute L_partial
-        current_sample = X_batch[-1].unsqueeze(0)  # (1, L, C)
+        # current_sample = X_batch[-1].unsqueeze(0)  # (1, L, C)
+        current_sample = X_batch[0].unsqueeze(0)  # (1, L, C)
         inp_cali = input_gcm(current_sample)  # (1, L, C)
         forecast = model(inp_cali)  # (1, pred_len, C)
         forecast_cali = output_gcm(forecast)  # (1, pred_len, C)
@@ -317,6 +321,9 @@ def main():
     parser.add_argument('--num_workers', type=int, default=10, help='data loader num workers')
 
     args = parser.parse_args()
+
+    # hard code batch size to be 1
+    args.batch_size = 1
     
     device = torch.device(args.device if torch.cuda.is_available() else 'cpu')
     
